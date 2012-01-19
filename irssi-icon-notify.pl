@@ -14,7 +14,9 @@ use Irssi;
 use vars qw($VERSION %IRSSI);
 use HTML::Entities;
 
+$SOCKFILE = "/tmp/irssi-icon.socket";
 $VERSION = "0.01";
+
 %IRSSI = (
     authors     => 'Ian Good',
     contact     => 'ian.good@rackspace.com',
@@ -39,7 +41,7 @@ sub print_text_notify {
 
     my $line = "NEWMSG $sender " . $dest->{target};
 
-    my $cmd = "EXEC - socat EXEC:\"echo $line\" GOPEN:/tmp/irssi-icon.socket";
+    my $cmd = "EXEC - socat EXEC:\"echo $line\" GOPEN:$SOCKFILE";
     $server->command($cmd);
 }
 
@@ -50,7 +52,7 @@ sub message_private_notify {
 
     my $line = "NEWWHISPER $nick";
 
-    my $cmd = "EXEC - socat EXEC:\"echo $line\" GOPEN:/tmp/irssi-icon.socket";
+    my $cmd = "EXEC - socat EXEC:\"echo $line\" GOPEN:$SOCKFILE";
     $server->command($cmd);
 }
 
