@@ -1,0 +1,20 @@
+irssi-icon.py
+=============
+
+This small daemon serves two basic functions:
+ * At startup, it starts a screen session called "irssi" running irssi.
+ * Provides a status-bar icon with notification emblems when you have new
+   private messages or messages in a channel you have joined.
+ * Clicking the icon clears notifications and can execute a customizable
+   shell command, e.g. to toggle display of irssi.
+
+For a description of (optional) command-line arguments, see --help.
+
+--------------
+
+Personally, I recommend using the Guake terminal (http://guake.org/) and
+attaching the irssi screen session within it. Then, you can use the command
+"guake -t" as your on-click action to toggle displaying of irssi on top of
+whatever you are currently working on. Finally, in your desktop environment,
+bind a key (I use Alt-`) to "irssi-icon.py --click".
+
