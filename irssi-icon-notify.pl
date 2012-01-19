@@ -14,8 +14,7 @@ use Irssi;
 use vars qw($VERSION %IRSSI);
 use HTML::Entities;
 
-$SOCKFILE = "/tmp/irssi-icon.socket";
-$VERSION = "0.01";
+$VERSION = "0.0";
 
 %IRSSI = (
     authors     => 'Ian Good',
@@ -23,6 +22,8 @@ $VERSION = "0.01";
     name        => 'irssi-icon-notify.pl',
     description => 'Sends message and whisper notifications to irssi-icon.py',
 );
+
+my $SOCKFILE = "/tmp/irssi-icon.socket";
 
 sub sanitize {
   my ($text) = @_;

@@ -200,13 +200,8 @@ class Icon(object):
     def _right_click(self, icon, button, timestamp):
         menu = gtk.Menu()
 
-        restart = gtk.ImageMenuItem('Restart')
         about = gtk.ImageMenuItem('About')
         quit = gtk.ImageMenuItem('Quit')
-
-        img = gtk.image_new_from_stock(gtk.STOCK_REFRESH, gtk.ICON_SIZE_MENU)
-        img.show()
-        restart.set_image(img)
 
         img = gtk.image_new_from_stock(gtk.STOCK_ABOUT, gtk.ICON_SIZE_MENU)
         img.show()
@@ -219,7 +214,6 @@ class Icon(object):
         about.connect('activate', self._show_about_dialog)
         quit.connect('activate', gtk.main_quit)
 
-        menu.append(restart)
         menu.append(about)
         menu.append(gtk.SeparatorMenuItem())
         menu.append(quit)
