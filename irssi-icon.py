@@ -49,9 +49,10 @@ class State(object):
         self.irssi.start()
         gtk.main()
 
-    def icon_clicked(self):
+    def icon_clicked(self, action=True):
         self.icon.clear_alert_icon()
-        self.irssi.click_action()
+        if action:
+            self.irssi.click_action()
 
     def new_irssi_message(self, extra, whisper=False):
         self.icon.set_alert(extra, whisper)
@@ -88,7 +89,7 @@ class Irssi(object):
             sender = words[1] if len(words) >= 2 else None
             self.state.new_irssi_message(sender.strip(), whisper=True)
         elif words[0] == 'CLEAR':
-            self.state.icon_clicked()
+            self.state.icon_clicked(False)
         client.close()
         return False
 
@@ -311,8 +312,8 @@ def _parse_args():
     parser.add_argument('--socket-file', dest='sockfile', metavar='FILE',
                         help='Communicate with irssi plugin on FILE socket.',
                         default='/tmp/irssi-icon.socket')
-    parser.add_argument('--click', action='store_true', dest='click',
-                        help='Signal a click event to a running daemon.')
+    parser.add_argument('--clear', action='store_true', dest='clear',
+                        help='Signal a clear event to a running daemon.')
     return parser.parse_args()
 # }}}
 
@@ -358,7 +359,7 @@ def _daemonize():
 if __name__ == '__main__':
     args = _parse_args()
 
-    if args.click:
+    if args.clear:
         Irssi(None, args).send_clear_message()
         sys.exit(0)
 
