@@ -2,7 +2,7 @@
 
 from distutils.core import setup
 
-setup(name='Irssi Icon',
+setup(name='irssi-icon',
       description='Displays an icon for irssi notifications.',
       author='Ian Good',
       author_email='ian.good@rackspace.com',
