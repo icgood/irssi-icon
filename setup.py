@@ -9,7 +9,7 @@ setup(name='irssi-icon',
       author='Ian Good',
       author_email='ian.good@rackspace.com',
       py_modules=['irssiicon'],
-      data_files=[('/usr/share/irssi/scripts', ['irssi-icon-notify.pl'])],
+      data_files=[('', ['irssi-icon-notify.pl'])],
       entry_points={'console_scripts': [
               'irssi-icon = irssiicon:main',
           ]})

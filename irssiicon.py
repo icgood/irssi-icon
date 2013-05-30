@@ -21,6 +21,8 @@ SOFTWARE.
 """
 
 import os
+import os.path
+import shutil
 import sys
 import stat
 import socket
@@ -34,7 +36,7 @@ import gobject
 import pygtk
 import gtk
 
-_VERSION = '1.0'
+_VERSION = '1.1'
 
 # {{{ class State
 class State(object):
@@ -55,6 +57,49 @@ class State(object):
 
     def new_irssi_message(self, extra, whisper=False):
         self.icon.set_alert(extra, whisper)
+
+    def check_irssi_plugin(self):
+        base = os.path.join(os.path.expanduser('~'), '.irssi')
+        scripts = os.path.join(base, 'scripts')
+        autorun = os.path.join(scripts, 'autorun')
+        plugin_name = 'irssi-icon-notify.pl'
+        return os.path.exists(os.path.join(scripts, plugin_name))
+
+    def setup_irssi_plugin(self):
+        base = os.path.join(os.path.expanduser('~'), '.irssi')
+        scripts = os.path.join(base, 'scripts')
+        autorun = os.path.join(scripts, 'autorun')
+        plugin_name = 'irssi-icon-notify.pl'
+        try:
+            os.makedirs(autorun)
+        except OSError, (err, msg):
+            if err != 17:
+                raise
+        from pkg_resources import Requirement, resource_stream
+        from_fp = resource_stream(Requirement.parse('irssi-icon'), plugin_name)
+        try:
+            with open(os.path.join(scripts, plugin_name), 'w') as to_fp:
+                shutil.copyfileobj(from_fp, to_fp)
+        finally:
+            from_fp.close()
+        try:
+            os.unlink(os.path.join(autorun, plugin_name))
+        except OSError, (err, msg):
+            if err != 2:
+                raise
+        os.symlink(os.path.join(scripts, plugin_name),
+                   os.path.join(autorun, plugin_name))
+
+    def check_socat(self):
+        try:
+            with open(os.devnull, 'w') as ignore:
+                subprocess.check_call(['socat', '-V'],
+                                      stdout=ignore,
+                                      stderr=ignore)
+        except subprocess.CalledProcessError:
+            return False
+        else:
+            return True
 
 # }}}
 
@@ -144,10 +189,11 @@ class Icon(object):
         self.icon = None
         self._whisper_alert = False
         self._load_icon(args)
-        self._create_icon()
 
     def start(self):
-        pass
+        self._create_icon()
+        if not self.state.check_irssi_plugin():
+            self._ask_about_irssi_plugin()
 
     def _load_icon(self, args):
         if args.icon:
@@ -165,6 +211,33 @@ class Icon(object):
         self.icon.connect('popup-menu', self._right_click)
         self.icon.connect('activate', self._left_click)
         self.clear_alert_icon()
+
+    def _ask_about_irssi_plugin(self):
+        msg = 'The irssi plugin required for proper functionality has not ' \
+              'been installed. Do this now?'
+        flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
+        box = gtk.MessageDialog(buttons=gtk.BUTTONS_YES_NO, flags=flags,
+                                type=gtk.MESSAGE_WARNING,
+                                message_format=msg)
+        response = box.run()
+        box.destroy()
+        if response == gtk.RESPONSE_YES:
+            if not self.state.check_socat():
+                self._alert_about_socat()
+            self.state.setup_irssi_plugin()
+        else:
+            sys.exit(1)
+
+    def _alert_about_socat(self):
+        msg = 'The irssi plugin requires the \'socat\' utility. Please ' \
+              'install \'socat\' using your distribution\'s package manager.'
+        flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
+        box = gtk.MessageDialog(buttons=gtk.BUTTONS_OK, flags=flags,
+                                type=gtk.MESSAGE_ERROR,
+                                message_format=msg)
+        box.run()
+        box.destroy()
+        sys.exit(2)
 
     def clear_alert_icon(self):
         self._whisper_alert = False
