@@ -8,8 +8,9 @@ setup(name='irssi-icon',
       description='Displays an icon for irssi notifications.',
       author='Ian Good',
       author_email='ian.good@rackspace.com',
-      py_modules=['irssiicon'],
-      data_files=[('', ['irssi-icon-notify.pl'])],
+      url='https://github.com/icgood/irssi-icon',
+      packages=find_packages(),
+      package_data={'irssiicon': ['irssi-icon-notify.pl']},
       entry_points={'console_scripts': [
               'irssi-icon = irssiicon:main',
           ]})

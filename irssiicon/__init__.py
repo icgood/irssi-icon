@@ -76,7 +76,8 @@ class State(object):
             if err != 17:
                 raise
         from pkg_resources import Requirement, resource_stream
-        from_fp = resource_stream(Requirement.parse('irssi-icon'), plugin_name)
+        res_name = os.path.join('irssiicon', plugin_name)
+        from_fp = resource_stream(Requirement.parse('irssi-icon'), res_name)
         try:
             with open(os.path.join(scripts, plugin_name), 'w') as to_fp:
                 shutil.copyfileobj(from_fp, to_fp)
