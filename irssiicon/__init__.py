@@ -36,7 +36,7 @@ import gobject
 import pygtk
 import gtk
 
-_VERSION = '1.1'
+_VERSION = '1.2'
 
 # {{{ class State
 class State(object):
@@ -112,11 +112,13 @@ class Irssi(object):
 
     def __init__(self, state, args):
         self.state = state
+        self.start_irssi = not args.no_irssi
         self.onclick = args.onclick
         self.sockfile = args.sockfile
 
     def start(self):
-        self.start_if_not_running()
+        if self.start_irssi:
+            self.start_if_not_running()
         self._connect_local_socket(self.sockfile)
 
     def send_clear_message(self):
@@ -499,6 +501,8 @@ def _parse_args():
     parser.add_argument('-v', '--version', action='version', version='%(prog)s '+_VERSION)
     parser.add_argument('-f', '--foreground', action='store_true', dest='foreground',
                         help='Run this application in the foreground, do not daemonize.')
+    parser.add_argument('--no-irssi', action='store_true', dest='no_irssi',
+                        help='Do not check for or start irssi automatically.')
     parser.add_argument('--icon', dest='icon', metavar='FILE',
                         help='Use FILE as the status-bar icon.')
     parser.add_argument('--on-click', dest='onclick', metavar='CMD',
