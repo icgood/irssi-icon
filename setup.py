@@ -10,7 +10,8 @@ setup(name='irssi-icon',
       author_email='ian.good@rackspace.com',
       url='https://github.com/icgood/irssi-icon',
       packages=find_packages(),
-      package_data={'irssiicon': ['irssi-icon-notify.pl']},
+      install_requires=['setuptools'],
+      package_data={'irssiicon': ['irssi-icon-notify.pl', 'icons/*.png']},
       entry_points={'console_scripts': [
               'irssi-icon = irssiicon:main',
           ]})
