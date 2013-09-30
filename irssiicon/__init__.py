@@ -30,13 +30,14 @@ import subprocess
 import base64
 import zlib
 import argparse
+import pkg_resources
 
 import dbus
 import gobject
 import pygtk
 import gtk
 
-_VERSION = '1.3'
+_VERSION = pkg_resources.require("irssi-icon")[0].version
 
 # {{{ class State
 class State(object):

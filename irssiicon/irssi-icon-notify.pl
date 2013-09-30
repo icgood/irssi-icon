@@ -12,7 +12,7 @@
 use strict;
 use Irssi;
 use vars qw($VERSION %IRSSI);
-use HTML::Entities;
+use IO::Socket::UNIX;
 
 $VERSION = "0.0";
 
@@ -25,10 +25,22 @@ $VERSION = "0.0";
 
 my $SOCKFILE = "/tmp/irssi-icon.socket";
 
-sub sanitize {
-  my ($text) = @_;
-  encode_entities($text);
-  return $text;
+sub write_and_close {
+    my $args = shift;
+    my ($sock, $data) = @$args;
+
+    print $sock $data;
+    close $sock;
+}
+
+sub send_data {
+    my ($path, $data) = @_;
+
+    my $sock = IO::Socket::UNIX->new($path);
+    $sock->blocking(0);
+    my @args = ($sock, $data);
+    Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
+                     \&write_and_close, \@args);
 }
 
 sub print_text_notify {
@@ -37,13 +49,12 @@ sub print_text_notify {
 
 	return if (!$server || !($dest->{level} & MSGLEVEL_PUBLIC));
     my $sender = $stripped;
-    $sender =~ s/^\<.([^\>]+)\>.+/\1/ ;
-    $stripped =~ s/^\<.[^\>]+\>.// ;
+    $sender =~ s/^\<.([^\>]+)\>.+/$1/;
+    $stripped =~ s/^\<.[^\>]+\>.//;
 
     my $line = "NEWMSG $sender " . $dest->{target};
 
-    my $cmd = "EXEC - socat EXEC:\"echo $line\" GOPEN:$SOCKFILE";
-    $server->command($cmd);
+    send_data($SOCKFILE, $line);
 }
 
 sub message_private_notify {
@@ -53,8 +64,7 @@ sub message_private_notify {
 
     my $line = "NEWWHISPER $nick";
 
-    my $cmd = "EXEC - socat EXEC:\"echo $line\" GOPEN:$SOCKFILE";
-    $server->command($cmd);
+    send_data($SOCKFILE, $line);
 }
 
 Irssi::signal_add('print text', 'print_text_notify');
