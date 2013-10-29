@@ -98,7 +98,7 @@ class State(object):
                 subprocess.check_call(['socat', '-V'],
                                       stdout=ignore,
                                       stderr=ignore)
-        except subprocess.CalledProcessError:
+        except (OSError, subprocess.CalledProcessError):
             return False
         else:
             return True
