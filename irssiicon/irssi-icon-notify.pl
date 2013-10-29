@@ -27,10 +27,12 @@ my $SOCKFILE = "/tmp/irssi-icon.socket";
 
 sub write_and_close {
     my $args = shift;
-    my ($sock, $data) = @$args;
+    my ($input_tag, $sock, $data) = @$args;
 
     print $sock $data;
     close $sock;
+
+    Irssi::input_remove($$input_tag);
 }
 
 sub send_data {
@@ -38,16 +40,17 @@ sub send_data {
 
     my $sock = IO::Socket::UNIX->new($path);
     $sock->blocking(0);
-    my @args = ($sock, $data);
-    Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
-                     \&write_and_close, \@args);
+    my $tag;
+    my @args = (\$tag, $sock, $data);
+    $tag = Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
+                            \&write_and_close, \@args);
 }
 
 sub print_text_notify {
     my ($dest, $text, $stripped) = @_;
     my $server = $dest->{server};
 
-	return if (!$server || !($dest->{level} & MSGLEVEL_PUBLIC));
+    return if (!$server || !($dest->{level} & MSGLEVEL_PUBLIC));
     my $sender = $stripped;
     $sender =~ s/^\<.([^\>]+)\>.+/$1/;
     $stripped =~ s/^\<.[^\>]+\>.//;
@@ -69,3 +72,5 @@ sub message_private_notify {
 
 Irssi::signal_add('print text', 'print_text_notify');
 Irssi::signal_add('message private', 'message_private_notify');
+
+# vim:sw=4:ts=4:sts=4:et:
