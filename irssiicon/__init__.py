@@ -1,5 +1,5 @@
 LICENSE = """\
-Copyright (c) 2012 Ian Good <ian.good@rackspace.com>
+Copyright (c) 2014 Ian Good <ian.good@rackspace.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -37,9 +37,8 @@ import gobject
 import pygtk
 import gtk
 
-_VERSION = pkg_resources.require("irssi-icon")[0].version
+__version__ = pkg_resources.require("irssi-icon")[0].version
 
-# {{{ class State
 class State(object):
 
     def __init__(self, args):
@@ -92,20 +91,7 @@ class State(object):
         os.symlink(os.path.join(scripts, plugin_name),
                    os.path.join(autorun, plugin_name))
 
-    def check_socat(self):
-        try:
-            with open(os.devnull, 'w') as ignore:
-                subprocess.check_call(['socat', '-V'],
-                                      stdout=ignore,
-                                      stderr=ignore)
-        except (OSError, subprocess.CalledProcessError):
-            return False
-        else:
-            return True
 
-# }}}
-
-# {{{ class Irssi
 class Irssi(object):
 
     _screen_session_name = 'irssi'
@@ -183,9 +169,7 @@ class Irssi(object):
                                            shell=True)
         p.communicate()
 
-# }}}
 
-# {{{ class Icon
 class Icon(object):
 
     def __init__(self, state, args):
@@ -225,22 +209,9 @@ class Icon(object):
         response = box.run()
         box.destroy()
         if response == gtk.RESPONSE_YES:
-            if not self.state.check_socat():
-                self._alert_about_socat()
             self.state.setup_irssi_plugin()
         else:
             sys.exit(1)
-
-    def _alert_about_socat(self):
-        msg = 'The irssi plugin requires the \'socat\' utility. Please ' \
-              'install \'socat\' using your distribution\'s package manager.'
-        flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
-        box = gtk.MessageDialog(buttons=gtk.BUTTONS_OK, flags=flags,
-                                type=gtk.MESSAGE_ERROR,
-                                message_format=msg)
-        box.run()
-        box.destroy()
-        sys.exit(2)
 
     def clear_alert_icon(self):
         self._whisper_alert = False
@@ -296,19 +267,20 @@ class Icon(object):
         about.set_authors(['Ian Good <ian.good@rackspace.com>'])
         about.set_license(LICENSE)
 
-        about.set_comments('Displays an icon to give notifications from irssi.')
+        comments = 'Displays an icon to give notifications from irssi.'
+        about.set_comments(comments)
 
         about.run()
         about.destroy()
 
-# }}}
 
-# {{{ _parse_args()
 def _parse_args():
-    parser = argparse.ArgumentParser(description='Adds a GTK status-bar icon allowing one-click control of irssi.')
-    parser.add_argument('-v', '--version', action='version', version='%(prog)s '+_VERSION)
-    parser.add_argument('-f', '--foreground', action='store_true', dest='foreground',
-                        help='Run this application in the foreground, do not daemonize.')
+    desc = 'Adds a GTK status-bar icon allowing one-click control of irssi.'
+    version = '%prog {0}'.format(__version__)
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('-v', '--version', action='version', version=version)
+    parser.add_argument('-f', '--foreground', action='store_true',
+                        dest='foreground', help='Do not run as a daemon.')
     parser.add_argument('--no-irssi', action='store_true', dest='no_irssi',
                         help='Do not check for or start irssi automatically.')
     parser.add_argument('--on-click', dest='onclick', metavar='CMD',
@@ -319,9 +291,7 @@ def _parse_args():
     parser.add_argument('--clear', action='store_true', dest='clear',
                         help='Signal a clear event to a running daemon.')
     return parser.parse_args()
-# }}}
 
-# {{{ _daemonize()
 # Daemonize the current process.
 def _daemonize():
 
@@ -358,7 +328,6 @@ def _daemonize():
     os.dup2(si.fileno(), sys.stdin.fileno())
     os.dup2(so.fileno(), sys.stdout.fileno())
     os.dup2(se.fileno(), sys.stderr.fileno())
-# }}}
 
 def main():
     args = _parse_args()
@@ -376,4 +345,4 @@ def main():
 if __name__ == '__main__':
     main()
 
-# vim:et:fdm=marker:sts=4:sw=4:ts=4
+# vim:et:sts=4:sw=4:ts=4
