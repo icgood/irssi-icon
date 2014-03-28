@@ -37,7 +37,9 @@ import gobject
 import pygtk
 import gtk
 
-__version__ = pkg_resources.require("irssi-icon")[0].version
+
+__version__ = pkg_resources.require('irssi-icon')[0].version
+
 
 class State(object):
 
@@ -146,15 +148,15 @@ class Irssi(object):
     def _is_running(self):
         args = ['screen', '-ls', self._screen_session_name]
         p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE)
+                             stdout=subprocess.PIPE)
         out, err = p.communicate()
         return out.startswith('There is a screen on:')
 
     def _start_irssi_screen(self):
         args = ['screen', '-S', self._screen_session_name, '-d', '-m'] + \
-               self._irssi_execute
+            self._irssi_execute
         p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                                   stdout=subprocess.PIPE)
+                             stdout=subprocess.PIPE)
         p.communicate()
 
     def start_if_not_running(self):
@@ -165,8 +167,7 @@ class Irssi(object):
         if not self.onclick:
             return
         p = subprocess.Popen(self.onclick, stdin=subprocess.PIPE,
-                                           stdout=subprocess.PIPE,
-                                           shell=True)
+                             stdout=subprocess.PIPE, shell=True)
         p.communicate()
 
 
@@ -189,7 +190,7 @@ class Icon(object):
             resource_name = 'icons/{0}.png'.format(name)
             fn = resource_filename(__name__, resource_name)
             return gtk.gdk.pixbuf_new_from_file(fn)
-        self._icon_pixbuf = load('main') 
+        self._icon_pixbuf = load('main')
         self._important_icon_pixbuf = load('important')
         self._notify_icon_pixbuf = load('notify')
 
@@ -253,7 +254,7 @@ class Icon(object):
         menu.show_all()
 
         menu.popup(None, None, gtk.status_icon_position_menu,
-                               button, timestamp, icon)
+                   button, timestamp, icon)
 
     def _left_click(self, icon):
         self.state.icon_clicked()
@@ -292,8 +293,9 @@ def _parse_args():
                         help='Signal a clear event to a running daemon.')
     return parser.parse_args()
 
-# Daemonize the current process.
+
 def _daemonize():
+    """Daemonize the current process."""
 
     # Fork once.
     try:
@@ -329,6 +331,7 @@ def _daemonize():
     os.dup2(so.fileno(), sys.stdout.fileno())
     os.dup2(se.fileno(), sys.stderr.fileno())
 
+
 def main():
     args = _parse_args()
 
@@ -342,7 +345,5 @@ def main():
 
     state.main()
 
-if __name__ == '__main__':
-    main()
 
 # vim:et:sts=4:sw=4:ts=4
