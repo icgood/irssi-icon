@@ -2,12 +2,9 @@ irssi-icon
 ==========
 
 This small daemon serves two basic functions:
- * At startup, it starts a screen session called "irssi" running irssi.
  * Provides a status-bar icon with notification emblems when you have new
    private messages or messages in a channel you have joined.
- * Clicking the icon clears notifications and can execute a customizable
-   shell command, e.g. to toggle display of irssi. Calling irssi-icon with
-   --clear will also clear notifications.
+ * Clicking the icon or calling with --clear will clear notifications.
 
 Installation
 ============
@@ -21,3 +18,14 @@ Execute:
     irssi-icon
 
 For a description of (optional) command-line arguments, see --help.
+
+irssi over SSH
+==============
+
+Many people run irssi on an shell server over SSH. Use the --ssh argument
+to connect irssi-icon to the remote irssi:
+
+    irssi-icon --ssh user@host
+
+Use the --ssh-key argument to avoid having to type a password on startup.
+
