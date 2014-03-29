@@ -428,13 +428,14 @@ def _daemonize():
 
     # Find the OS /dev/null equivalent.
     nullfile = getattr(os, 'devnull', '/dev/null')
+    logfile = '/var/log/irssi-icon.log'
 
     # Redirect all standard I/O to /dev/null.
     sys.stdout.flush()
     sys.stderr.flush()
-    si = file(nullfile, 'r')
-    so = file(nullfile, 'a+')
-    se = file(nullfile, 'a+', 0)
+    si = open(nullfile, 'r')
+    so = open(logfile, 'a+')
+    se = open(logfile, 'a+', 0)
     os.dup2(si.fileno(), sys.stdin.fileno())
     os.dup2(so.fileno(), sys.stdout.fileno())
     os.dup2(se.fileno(), sys.stderr.fileno())
@@ -447,9 +448,9 @@ def main():
         Irssi(None, args).send_clear_message()
         sys.exit(0)
 
-    state = State(args)
     if not args.foreground:
         _daemonize()
+    state = State(args)
 
     try:
         state.main()
