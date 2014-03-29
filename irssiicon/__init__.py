@@ -228,7 +228,7 @@ class Icon(object):
 
         about.set_destroy_with_parent(True)
         about.set_name('Irssi Icon')
-        about.set_version(_VERSION)
+        about.set_version(__version__)
         about.set_authors(['Ian Good <ian.good@rackspace.com>'])
         about.set_license(LICENSE)
 
@@ -344,8 +344,11 @@ class RemoteHost(multiprocessing.Process, BaseHost):
                     mkdir_p(os.path.dirname(directory))
                     mkdir_p(directory)
         mkdir_p(autorun_dir)
-        with sftp.open(plugin_path, 'w') as fp:
+        fp = sftp.open(plugin_path, 'w')
+        try:
             fp.write(plugin_contents)
+        finally:
+            fp.close()
         try:
             sftp.unlink(autorun_path)
         except IOError:
