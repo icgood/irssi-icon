@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name='irssi-icon',
-      version='1.6',
+      version='2.0',
       description='Displays an icon for irssi notifications.',
       author='Ian Good',
       author_email='ian.good@rackspace.com',

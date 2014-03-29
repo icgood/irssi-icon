@@ -12,7 +12,7 @@
 use strict;
 use Irssi;
 use vars qw($VERSION %IRSSI);
-use IO::Socket::UNIX;
+use IO::Socket::INET;
 
 $VERSION = "<<irssi-icon version>>";
 
@@ -23,7 +23,8 @@ $VERSION = "<<irssi-icon version>>";
     description => 'Sends message and whisper notifications to irssi-icon.py',
 );
 
-my $SOCKFILE = "/tmp/irssi-icon.socket";
+my $TCP_HOST = '127.0.0.1';
+my $TCP_PORT = '21693';
 
 sub write_and_close {
     my $args = shift;
@@ -36,13 +37,17 @@ sub write_and_close {
 }
 
 sub send_data {
-    my ($path, $data) = @_;
+    my ($data) = @_;
 
-    my $sock = IO::Socket::UNIX->new($path);
+    my $sock = IO::Socket::INET->new(
+        PeerHost => $TCP_HOST,
+        PeerPort => $TCP_PORT,
+        Proto => 'tcp',
+    ) or return;
     $sock->blocking(0);
     my $tag;
     my @args = (\$tag, $sock, $data);
-    $tag = Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
+    return Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
                             \&write_and_close, \@args);
 }
 
@@ -57,7 +62,7 @@ sub print_text_notify {
 
     my $line = "NEWMSG $sender " . $dest->{target};
 
-    send_data($SOCKFILE, $line);
+    send_data($line);
 }
 
 sub message_private_notify {
@@ -67,7 +72,7 @@ sub message_private_notify {
 
     my $line = "NEWWHISPER $nick";
 
-    send_data($SOCKFILE, $line);
+    send_data($line);
 }
 
 Irssi::signal_add('print text', 'print_text_notify');

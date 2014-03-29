@@ -31,8 +31,11 @@ import base64
 import zlib
 import argparse
 import pkg_resources
+import errno
+import signal
+import multiprocessing
+import SocketServer
 
-import dbus
 import gobject
 import pygtk
 import gtk
@@ -45,12 +48,20 @@ class State(object):
 
     def __init__(self, args):
         self.icon = Icon(self, args)
+        if args.ssh:
+            self.host = RemoteHost(self.icon, args.ssh, args.ssh_key)
+        else:
+            self.host = LocalHost()
         self.irssi = Irssi(self, args)
 
     def main(self):
         self.icon.start()
+        self.host.start()
         self.irssi.start()
         gtk.main()
+
+    def close(self):
+        self.host.terminate()
 
     def icon_clicked(self, action=True):
         self.icon.clear_alert_icon()
@@ -60,75 +71,22 @@ class State(object):
     def new_irssi_message(self, extra, whisper=False):
         self.icon.set_alert(extra, whisper)
 
-    def _load_plugin_contents(self):
-        plugin_name = 'irssi-icon-notify.pl'
-        from pkg_resources import Requirement, resource_stream
-        res_name = os.path.join('irssiicon', plugin_name)
-        from_fp = resource_stream(Requirement.parse('irssi-icon'), res_name)
-        try:
-            return from_fp.read().replace('<<irssi-icon version>>',
-                                          __version__)
-        finally:
-            from_fp.close()
-
-    def _get_plugin_path(self):
-        base = os.path.join(os.path.expanduser('~'), '.irssi')
-        scripts = os.path.join(base, 'scripts')
-        plugin_name = 'irssi-icon-notify.pl'
-        return scripts, plugin_name
-
-    def check_irssi_plugin(self):
-        plugin_dir, plugin_name = self._get_plugin_path()
-        plugin_path = os.path.join(plugin_dir, plugin_name)
-        if not os.path.exists(plugin_path):
-            return False
-        with open(plugin_path, 'r') as existing_fp:
-            existing_contents = existing_fp.read()
-        plugin_contents = self._load_plugin_contents()
-        return existing_contents == plugin_contents
-
-    def setup_irssi_plugin(self):
-        plugin_dir, plugin_name = self._get_plugin_path()
-        plugin_path = os.path.join(plugin_dir, plugin_name)
-        autorun_dir = os.path.join(plugin_dir, 'autorun')
-        autorun_path = os.path.join(autorun_dir, plugin_name)
-        try:
-            os.makedirs(autorun_dir)
-        except OSError, (err, msg):
-            if err != 17:
-                raise
-        plugin_contents = self._load_plugin_contents()
-        with open(plugin_path, 'w') as to_fp:
-            to_fp.write(plugin_contents)
-        try:
-            os.unlink(autorun_path)
-        except OSError, (err, msg):
-            if err != 2:
-                raise
-        os.symlink(plugin_path, autorun_path)
-
 
 class Irssi(object):
 
-    _screen_session_name = 'irssi'
-    _irssi_execute = ['irssi']
-
     def __init__(self, state, args):
         self.state = state
-        self.start_irssi = not args.no_irssi
         self.onclick = args.onclick
-        self.sockfile = args.sockfile
 
     def start(self):
-        if self.start_irssi:
-            self.start_if_not_running()
-        self._connect_local_socket(self.sockfile)
+        self._connect_local_socket()
 
     def send_clear_message(self):
-        s = socket.socket(socket.AF_UNIX)
-        s.connect(self.sockfile)
-        s.send('CLEAR\r\n')
-        s.close()
+        s = socket.create_connection(('localhost', 21693))
+        try:
+            s.send('CLEAR\r\n')
+        finally:
+            s.close()
 
     def _msg_client_data(self, client, cond):
         words = client.recv(256).split(None, 2)
@@ -148,34 +106,13 @@ class Irssi(object):
         gobject.io_add_watch(client, gobject.IO_IN, self._msg_client_data)
         return True
 
-    def _connect_local_socket(self, sockfile):
-        try:
-            os.unlink(sockfile)
-        except OSError:
-            pass
-        self._msg_sock = socket.socket(socket.AF_UNIX)
-        self._msg_sock.bind(sockfile)
+    def _connect_local_socket(self):
+        self._msg_sock = socket.socket(socket.AF_INET)
+        self._msg_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._msg_sock.bind(('127.0.0.1', 21693))
         self._msg_sock.listen(5)
         gobject.io_add_watch(self._msg_sock, gobject.IO_IN,
                              self._msg_sock_connection)
-
-    def _is_running(self):
-        args = ['screen', '-ls', self._screen_session_name]
-        p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE)
-        out, err = p.communicate()
-        return out.startswith('There is a screen on:')
-
-    def _start_irssi_screen(self):
-        args = ['screen', '-S', self._screen_session_name, '-d', '-m'] + \
-            self._irssi_execute
-        p = subprocess.Popen(args, stdin=subprocess.PIPE,
-                             stdout=subprocess.PIPE)
-        p.communicate()
-
-    def start_if_not_running(self):
-        if not self._is_running():
-            self._start_irssi_screen()
 
     def click_action(self):
         if not self.onclick:
@@ -195,8 +132,6 @@ class Icon(object):
 
     def start(self):
         self._create_icon()
-        if not self.state.check_irssi_plugin():
-            self._ask_about_irssi_plugin()
 
     def _load_icons(self):
         def load(name):
@@ -214,19 +149,34 @@ class Icon(object):
         self.icon.connect('activate', self._left_click)
         self.clear_alert_icon()
 
-    def _ask_about_irssi_plugin(self):
-        msg = 'The irssi plugin required for proper functionality is ' \
-              'missing or outdated. Install the latest plugin?'
+    def alert(self, msg):
         flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
-        box = gtk.MessageDialog(buttons=gtk.BUTTONS_YES_NO, flags=flags,
+        box = gtk.MessageDialog(buttons=gtk.BUTTONS_OK, flags=flags,
                                 type=gtk.MESSAGE_WARNING,
                                 message_format=msg)
-        response = box.run()
+        box.run()
         box.destroy()
-        if response == gtk.RESPONSE_YES:
-            self.state.setup_irssi_plugin()
-        else:
-            sys.exit(1)
+
+    def ask_for_password(self, target):
+        msg = 'Please enter password for {0}:'.format(target)
+        flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
+        box = gtk.MessageDialog(buttons=gtk.BUTTONS_OK, flags=flags,
+                                type=gtk.MESSAGE_QUESTION,
+                                message_format=msg)
+        def responseToDialog(entry, dialog, response):
+            dialog.response(response)
+        entry = gtk.Entry()
+        entry.set_visibility(False)
+        entry.connect('activate', responseToDialog, box, gtk.RESPONSE_OK)
+        hbox = gtk.HBox()
+        hbox.pack_start(gtk.Label("Password:"), False, 5, 5)
+        hbox.pack_end(entry)
+        box.vbox.pack_end(hbox, True, True, 0)
+        box.show_all()
+        box.run()
+        password = entry.get_text()
+        box.destroy()
+        return password
 
     def clear_alert_icon(self):
         self._whisper_alert = False
@@ -289,6 +239,144 @@ class Icon(object):
         about.destroy()
 
 
+class BaseHost(object):
+
+    def _load_plugin_contents(self):
+        plugin_name = 'irssi-icon-notify.pl'
+        from pkg_resources import Requirement, resource_stream
+        res_name = os.path.join('irssiicon', plugin_name)
+        from_fp = resource_stream(Requirement.parse('irssi-icon'), res_name)
+        try:
+            return from_fp.read().replace('<<irssi-icon version>>',
+                                          __version__)
+        finally:
+            from_fp.close()
+
+    def _get_plugin_path(self, home_dir):
+        scripts_dir = os.path.join(home_dir, '.irssi', 'scripts')
+        plugin_name = 'irssi-icon-notify.pl'
+        return scripts_dir, plugin_name
+
+
+class LocalHost(BaseHost):
+
+    def start(self):
+        home_dir = os.path.expanduser('~')
+        scripts_dir, plugin_name = self._get_plugin_path(home_dir)
+        plugin_path = os.path.join(scripts_dir, plugin_name)
+        autorun_dir = os.path.join(scripts_dir, 'autorun')
+        autorun_path = os.path.join(autorun_dir, plugin_name)
+        plugin_contents = self._load_plugin_contents()
+        try:
+            os.makedirs(autorun_dir)
+        except OSError, (err, msg):
+            if err != 17:
+                raise
+        with open(plugin_path, 'w') as fp:
+            fp.write(plugin_contents)
+        try:
+            os.unlink(autorun_path)
+        except OSError, (err, msg):
+            if err != 2:
+                raise
+        os.symlink(plugin_path, autorun_path)
+
+    def terminate(self):
+        pass
+
+
+class RemoteHost(multiprocessing.Process, BaseHost):
+
+    daemon = True
+
+    def __init__(self, icon, target, keyfile):
+        super(RemoteHost, self).__init__()
+        self.icon = icon
+        self._parse_target(target)
+        self.keyfile = keyfile
+
+    def _parse_target(self, target):
+        user = os.getenv('LOGNAME')
+        port = 22
+        if '@' in target:
+            user, target = target.split('@', 1)
+        if ':' in target:
+            target, port = target.rsplit(':', 1)
+        self.user = user
+        self.host = target
+        self.port = int(port)
+
+    def start(self):
+        try:
+            import paramiko
+        except ImportError:
+            msg = 'SSH forwarding support disabled:\n\n- You must install ' \
+                'paramiko for SSH forwarding support. '
+            self.icon.alert(msg)
+            return
+        self.child_conn, parent_conn = multiprocessing.Pipe(False)
+        super(RemoteHost, self).start()
+        password = None
+        if not self.keyfile:
+            target = '{0}@{1}:{2!s}'.format(self.user, self.host, self.port)
+            password = self.icon.ask_for_password(target)
+        parent_conn.send(password)
+
+    def _get_home_dir(self, ssh_client):
+        stdin, stdout, stderr = ssh_client.exec_command('echo $HOME')
+        home_dir = ''.join(stdout.readlines()).strip()
+        stdin.close()
+        stdout.close()
+        stderr.close()
+        return home_dir
+
+    def _install_plugin(self, sftp, home_dir):
+        scripts_dir, plugin_name = self._get_plugin_path(home_dir)
+        plugin_path = os.path.join(scripts_dir, plugin_name)
+        autorun_dir = os.path.join(scripts_dir, 'autorun')
+        autorun_path = os.path.join(autorun_dir, plugin_name)
+        plugin_contents = self._load_plugin_contents()
+        def mkdir_p(directory):
+            try:
+                sftp.mkdir(directory)
+            except IOError as exc:
+                if exc.errno == errno.ENOENT:
+                    mkdir_p(os.path.dirname(directory))
+                    mkdir_p(directory)
+        mkdir_p(autorun_dir)
+        with sftp.open(plugin_path, 'w') as fp:
+            fp.write(plugin_contents)
+        try:
+            sftp.unlink(autorun_path)
+        except IOError:
+            pass
+        sftp.symlink(plugin_path, autorun_path)
+
+    def _handle_term(self, sig, frame):
+        raise SystemExit()
+
+    def run(self):
+        import paramiko
+        from .rforward import reverse_forward_tunnel
+        signal.signal(signal.SIGTERM, self._handle_term)
+        client = paramiko.SSHClient()
+        client.load_system_host_keys()
+        client.set_missing_host_key_policy(paramiko.WarningPolicy())
+        password = self.child_conn.recv()
+        client.connect(self.host, self.port, username=self.user,
+                       key_filename=self.keyfile,
+                       look_for_keys=(self.keyfile is None),
+                       password=password)
+        sftp = client.open_sftp()
+        self._install_plugin(sftp, self._get_home_dir(client))
+        sftp.close()
+        try:
+            reverse_forward_tunnel(21693, '127.0.0.1', 21693, 
+                                   client.get_transport())
+        except (KeyboardInterrupt, SystemExit):
+            pass
+
+
 def _parse_args():
     desc = 'Adds a GTK status-bar icon allowing one-click control of irssi.'
     version = '%prog {0}'.format(__version__)
@@ -296,15 +384,18 @@ def _parse_args():
     parser.add_argument('-v', '--version', action='version', version=version)
     parser.add_argument('-f', '--foreground', action='store_true',
                         dest='foreground', help='Do not run as a daemon.')
-    parser.add_argument('--no-irssi', action='store_true', dest='no_irssi',
-                        help='Do not check for or start irssi automatically.')
     parser.add_argument('--on-click', dest='onclick', metavar='CMD',
                         help='Execute CMD when the icon is clicked.')
-    parser.add_argument('--socket-file', dest='sockfile', metavar='FILE',
-                        help='Communicate with irssi plugin on FILE socket.',
-                        default='/tmp/irssi-icon.socket')
     parser.add_argument('--clear', action='store_true', dest='clear',
                         help='Signal a clear event to a running daemon.')
+    parser.add_argument('--ssh', metavar='TARGET', default=None,
+                        help='Forward the listening port to TARGET, which ' \
+                        'is of the form [user@]host[:port]')
+    parser.add_argument('--ssh-key', metavar='FILE', default=None,
+                        help='If given, FILE is used as an SSH key. If a ' \
+                        'key cannot be found, the password must be entered ' \
+                        'in a dialog box.')
+                         
     return parser.parse_args()
 
 
@@ -357,7 +448,11 @@ def main():
     if not args.foreground:
         _daemonize()
 
-    state.main()
+    try:
+        state.main()
+    except KeyboardInterrupt:
+        pass
+    state.close()
 
 
 # vim:et:sts=4:sw=4:ts=4
