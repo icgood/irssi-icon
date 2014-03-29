@@ -428,7 +428,7 @@ def _daemonize():
 
     # Find the OS /dev/null equivalent.
     nullfile = getattr(os, 'devnull', '/dev/null')
-    logfile = '/var/log/irssi-icon.log'
+    logfile = '/tmp/irssi-icon.log'
 
     # Redirect all standard I/O to /dev/null.
     sys.stdout.flush()
