@@ -14,7 +14,7 @@ use Irssi;
 use vars qw($VERSION %IRSSI);
 use IO::Socket::UNIX;
 
-$VERSION = "0.0";
+$VERSION = "<<irssi-icon version>>";
 
 %IRSSI = (
     authors     => 'Ian Good',

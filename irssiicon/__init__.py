@@ -60,38 +60,52 @@ class State(object):
     def new_irssi_message(self, extra, whisper=False):
         self.icon.set_alert(extra, whisper)
 
-    def check_irssi_plugin(self):
-        base = os.path.join(os.path.expanduser('~'), '.irssi')
-        scripts = os.path.join(base, 'scripts')
-        autorun = os.path.join(scripts, 'autorun')
+    def _load_plugin_contents(self):
         plugin_name = 'irssi-icon-notify.pl'
-        return os.path.exists(os.path.join(scripts, plugin_name))
-
-    def setup_irssi_plugin(self):
-        base = os.path.join(os.path.expanduser('~'), '.irssi')
-        scripts = os.path.join(base, 'scripts')
-        autorun = os.path.join(scripts, 'autorun')
-        plugin_name = 'irssi-icon-notify.pl'
-        try:
-            os.makedirs(autorun)
-        except OSError, (err, msg):
-            if err != 17:
-                raise
         from pkg_resources import Requirement, resource_stream
         res_name = os.path.join('irssiicon', plugin_name)
         from_fp = resource_stream(Requirement.parse('irssi-icon'), res_name)
         try:
-            with open(os.path.join(scripts, plugin_name), 'w') as to_fp:
-                shutil.copyfileobj(from_fp, to_fp)
+            return from_fp.read().replace('<<irssi-icon version>>',
+                                          __version__)
         finally:
             from_fp.close()
+
+    def _get_plugin_path(self):
+        base = os.path.join(os.path.expanduser('~'), '.irssi')
+        scripts = os.path.join(base, 'scripts')
+        plugin_name = 'irssi-icon-notify.pl'
+        return scripts, plugin_name
+
+    def check_irssi_plugin(self):
+        plugin_dir, plugin_name = self._get_plugin_path()
+        plugin_path = os.path.join(plugin_dir, plugin_name)
+        if not os.path.exists(plugin_path):
+            return False
+        with open(plugin_path, 'r') as existing_fp:
+            existing_contents = existing_fp.read()
+        plugin_contents = self._load_plugin_contents()
+        return existing_contents == plugin_contents
+
+    def setup_irssi_plugin(self):
+        plugin_dir, plugin_name = self._get_plugin_path()
+        plugin_path = os.path.join(plugin_dir, plugin_name)
+        autorun_dir = os.path.join(plugin_dir, 'autorun')
+        autorun_path = os.path.join(autorun_dir, plugin_name)
         try:
-            os.unlink(os.path.join(autorun, plugin_name))
+            os.makedirs(autorun_dir)
+        except OSError, (err, msg):
+            if err != 17:
+                raise
+        plugin_contents = self._load_plugin_contents()
+        with open(plugin_path, 'w') as to_fp:
+            to_fp.write(plugin_contents)
+        try:
+            os.unlink(autorun_path)
         except OSError, (err, msg):
             if err != 2:
                 raise
-        os.symlink(os.path.join(scripts, plugin_name),
-                   os.path.join(autorun, plugin_name))
+        os.symlink(plugin_path, autorun_path)
 
 
 class Irssi(object):
@@ -201,8 +215,8 @@ class Icon(object):
         self.clear_alert_icon()
 
     def _ask_about_irssi_plugin(self):
-        msg = 'The irssi plugin required for proper functionality has not ' \
-              'been installed. Do this now?'
+        msg = 'The irssi plugin required for proper functionality is ' \
+              'missing or outdated. Install the latest plugin?'
         flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
         box = gtk.MessageDialog(buttons=gtk.BUTTONS_YES_NO, flags=flags,
                                 type=gtk.MESSAGE_WARNING,
