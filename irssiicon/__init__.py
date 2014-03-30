@@ -36,7 +36,8 @@ import signal
 import multiprocessing
 import SocketServer
 
-import gobject
+from gi.repository import Notify
+from gi.repository import GObject as gobject
 import pygtk
 import gtk
 
@@ -68,8 +69,9 @@ class State(object):
         if action:
             self.irssi.click_action()
 
-    def new_irssi_message(self, extra, whisper=False):
-        self.icon.set_alert(extra, whisper)
+    def new_irssi_message(self, info, data, whisper=False):
+        self.icon.set_alert(info, whisper)
+        self.icon.notify(info, data, whisper)
 
 
 class Irssi(object):
@@ -84,21 +86,30 @@ class Irssi(object):
     def send_clear_message(self):
         s = socket.create_connection(('localhost', 21693))
         try:
-            s.send('CLEAR\r\n')
+            s.send('{0}:CLEAR> '.format(__version__))
         finally:
             s.close()
 
-    def _msg_client_data(self, client, cond):
-        words = client.recv(256).split(None, 2)
-        if words[0] == 'NEWMSG':
-            channel = words[2] if len(words) >= 3 else None
-            self.state.new_irssi_message(channel.strip())
-        elif words[0] == 'NEWWHISPER':
-            sender = words[1] if len(words) >= 2 else None
-            self.state.new_irssi_message(sender.strip(), whisper=True)
-        elif words[0] == 'CLEAR':
-            self.state.icon_clicked(False)
+    def _get_request(self, client):
+        request = client.recv(4096)
         client.close()
+        data = ''
+        if '\r\n' in request:
+            request, data = request.split('\r\n', 1)
+        command, info = request.split('> ', 1)
+        version, command = command.split(':', 1)
+        assert version == __version__, 'Plugin version mismatch.'
+        return command, info, data
+
+    def _msg_client_data(self, client, cond):
+        command, info, data = self._get_request(client)
+        if command == 'NEWMSG':
+            data = 'New message in {0}'.format(data)
+            self.state.new_irssi_message(info, data)
+        elif command == 'NEWWHISPER':
+            self.state.new_irssi_message(info, data, whisper=True)
+        elif command == 'CLEAR':
+            self.state.icon_clicked(False)
         return False
 
     def _msg_sock_connection(self, f, cond):
@@ -127,10 +138,12 @@ class Icon(object):
     def __init__(self, state, args):
         self.state = state
         self.icon = None
+        self.show_notifications = not args.no_notify
         self._whisper_alert = False
         self._load_icons()
 
     def start(self):
+        Notify.init('irssi-icon')
         self._create_icon()
 
     def _load_icons(self):
@@ -183,16 +196,24 @@ class Icon(object):
         self.icon.set_from_pixbuf(self._icon_pixbuf)
         self.icon.set_tooltip('Irssi Icon')
 
-    def set_alert(self, extra, whisper):
+    def set_alert(self, info, whisper):
         if whisper:
             self._whisper_alert = True
             self.icon.set_from_pixbuf(self._important_icon_pixbuf)
-            if extra:
-                self.icon.set_tooltip('Irssi Icon\nWhisper from ' + extra)
+            self.icon.set_tooltip('Irssi Icon\nWhisper from ' + info)
         elif not self._whisper_alert:
             self.icon.set_from_pixbuf(self._notify_icon_pixbuf)
-            if extra:
-                self.icon.set_tooltip('Irssi Icon\nNew messages in ' + extra)
+            self.icon.set_tooltip('Irssi Icon\nNew messages in ' + info)
+
+    def _hide_notification(self, notification):
+        notification.close()
+        return False
+
+    def notify(self, info, data, whisper):
+        if self.show_notifications:
+            notification = Notify.Notification.new(info, data, None)
+            notification.show()
+            gobject.timeout_add(10000, self._hide_notification, notification)
 
     def _right_click(self, icon, button, timestamp):
         menu = gtk.Menu()
@@ -324,7 +345,7 @@ class RemoteHost(multiprocessing.Process, BaseHost):
 
     def terminate(self):
         if self.is_alive():
-            super(RemoveHost, self).terminate()
+            super(RemoteHost, self).terminate()
 
     def _get_home_dir(self, ssh_client):
         stdin, stdout, stderr = ssh_client.exec_command('echo $HOME')
@@ -391,6 +412,8 @@ def _parse_args():
     parser.add_argument('-v', '--version', action='version', version=version)
     parser.add_argument('-f', '--foreground', action='store_true',
                         dest='foreground', help='Do not run as a daemon.')
+    parser.add_argument('--no-notify', action='store_true',
+                        help='Disable libnotify notifications.')
     parser.add_argument('--on-click', dest='onclick', metavar='CMD',
                         help='Execute CMD when the icon is clicked.')
     parser.add_argument('--clear', action='store_true', dest='clear',

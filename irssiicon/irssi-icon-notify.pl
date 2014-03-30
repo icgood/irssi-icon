@@ -47,7 +47,7 @@ sub send_data {
     $sock->blocking(0);
     my $tag;
     my @args = (\$tag, $sock, $data);
-    return Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
+    $tag = Irssi::input_add($sock->fileno, Irssi::INPUT_WRITE,
                             \&write_and_close, \@args);
 }
 
@@ -60,7 +60,7 @@ sub print_text_notify {
     $sender =~ s/^\<.([^\>]+)\>.+/$1/;
     $stripped =~ s/^\<.[^\>]+\>.//;
 
-    my $line = "NEWMSG $sender " . $dest->{target};
+    my $line = "$VERSION:NEWMSG> $sender\r\n" . $dest->{target};
 
     send_data($line);
 }
@@ -70,7 +70,7 @@ sub message_private_notify {
 
     return if (!$server);
 
-    my $line = "NEWWHISPER $nick";
+    my $line = "$VERSION:NEWWHISPER> $nick\r\n" . $msg;
 
     send_data($line);
 }
