@@ -322,6 +322,10 @@ class RemoteHost(multiprocessing.Process, BaseHost):
             password = self.icon.ask_for_password(target)
         parent_conn.send(password)
 
+    def terminate(self):
+        if self.is_alive():
+            super(RemoveHost, self).terminate()
+
     def _get_home_dir(self, ssh_client):
         stdin, stdout, stderr = ssh_client.exec_command('echo $HOME')
         home_dir = ''.join(stdout.readlines()).strip()
