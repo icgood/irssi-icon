@@ -71,7 +71,8 @@ class State(object):
 
     def new_irssi_message(self, info, data, whisper=False):
         self.icon.set_alert(info, whisper)
-        self.icon.notify(info, data, whisper)
+        if whisper:
+            self.icon.notify(info, data)
 
 
 class Irssi(object):
@@ -209,7 +210,7 @@ class Icon(object):
         notification.close()
         return False
 
-    def notify(self, info, data, whisper):
+    def notify(self, info, data):
         if self.show_notifications:
             notification = Notify.Notification.new(info, data, None)
             notification.show()
