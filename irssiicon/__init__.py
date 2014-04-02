@@ -314,9 +314,10 @@ class _RemoteHostProcess(multiprocessing.Process):
 
     daemon = True
 
-    def __init__(self, parent):
+    def __init__(self, parent, install_plugin=True):
         super(_RemoteHostProcess, self).__init__()
         self.parent = parent
+        self.install_plugin = install_plugin
 
     def _get_home_dir(self, ssh_client):
         stdin, stdout, stderr = ssh_client.exec_command('echo $HOME')
@@ -367,9 +368,10 @@ class _RemoteHostProcess(multiprocessing.Process):
                        key_filename=self.parent.keyfile,
                        look_for_keys=(self.parent.keyfile is None),
                        password=password)
-        sftp = client.open_sftp()
-        self._install_plugin(sftp, self.parent._get_home_dir(client))
-        sftp.close()
+        if self.install_plugin:
+            sftp = client.open_sftp()
+            self._install_plugin(sftp, self._get_home_dir(client))
+            sftp.close()
         try:
             reverse_forward_tunnel(21693, '127.0.0.1', 21693, 
                                    client.get_transport())
@@ -378,7 +380,7 @@ class _RemoteHostProcess(multiprocessing.Process):
 
 
 
-class RemoteHost(multiprocessing.Process, BaseHost):
+class RemoteHost(BaseHost):
 
     daemon = True
 
@@ -402,15 +404,12 @@ class RemoteHost(multiprocessing.Process, BaseHost):
         self.port = int(port)
 
     def _restart(self):
-        self.process = _RemoteHostProcess(self)
+        self.process = _RemoteHostProcess(self, install_plugin=False)
         self.start()
 
     def _on_exit(self, pid, condition, user_data):
         self.process.join()
-        if self.process.exitcode == 0:
-            self._restart()
-        else:
-            gobject.timeout_add(5000, self._restart)
+        gobject.timeout_add(2000, self._restart)
 
     def start(self):
         try:
@@ -421,8 +420,8 @@ class RemoteHost(multiprocessing.Process, BaseHost):
             self.icon.alert(msg)
             return
         self.child_conn, parent_conn = multiprocessing.Pipe(False)
-        super(RemoteHost, self).start()
-        gobject.child_watch_add(self.pid, self._on_exit, None)
+        self.process.start()
+        gobject.child_watch_add(self.process.pid, self._on_exit, None)
         password = None
         if not self.keyfile:
             target = '{0}@{1}:{2!s}'.format(self.user, self.host, self.port)
