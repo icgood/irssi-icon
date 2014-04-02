@@ -62,7 +62,7 @@ class State(object):
         gtk.main()
 
     def close(self):
-        self.host.terminate()
+        self.host.close()
 
     def icon_clicked(self, action=True):
         self.icon.clear_alert_icon()
@@ -263,6 +263,12 @@ class Icon(object):
 
 class BaseHost(object):
 
+    def start(self):
+        raise NotImplementedError()
+
+    def close(self):
+        pass
+
     def _load_plugin_contents(self):
         plugin_name = 'irssi-icon-notify.pl'
         from pkg_resources import Requirement, resource_stream
@@ -303,50 +309,14 @@ class LocalHost(BaseHost):
                 raise
         os.symlink(plugin_path, autorun_path)
 
-    def terminate(self):
-        pass
 
-
-class RemoteHost(multiprocessing.Process, BaseHost):
+class _RemoteHostProcess(multiprocessing.Process):
 
     daemon = True
 
-    def __init__(self, icon, target, keyfile):
-        super(RemoteHost, self).__init__()
-        self.icon = icon
-        self._parse_target(target)
-        self.keyfile = keyfile
-
-    def _parse_target(self, target):
-        user = os.getenv('LOGNAME')
-        port = 22
-        if '@' in target:
-            user, target = target.split('@', 1)
-        if ':' in target:
-            target, port = target.rsplit(':', 1)
-        self.user = user
-        self.host = target
-        self.port = int(port)
-
-    def start(self):
-        try:
-            import paramiko
-        except ImportError:
-            msg = 'SSH forwarding support disabled:\n\n- You must install ' \
-                'paramiko for SSH forwarding support. '
-            self.icon.alert(msg)
-            return
-        self.child_conn, parent_conn = multiprocessing.Pipe(False)
-        super(RemoteHost, self).start()
-        password = None
-        if not self.keyfile:
-            target = '{0}@{1}:{2!s}'.format(self.user, self.host, self.port)
-            password = self.icon.ask_for_password(target)
-        parent_conn.send(password)
-
-    def terminate(self):
-        if self.is_alive():
-            super(RemoteHost, self).terminate()
+    def __init__(self, parent):
+        super(_RemoteHostProcess, self).__init__()
+        self.parent = parent
 
     def _get_home_dir(self, ssh_client):
         stdin, stdout, stderr = ssh_client.exec_command('echo $HOME')
@@ -357,11 +327,11 @@ class RemoteHost(multiprocessing.Process, BaseHost):
         return home_dir
 
     def _install_plugin(self, sftp, home_dir):
-        scripts_dir, plugin_name = self._get_plugin_path(home_dir)
+        scripts_dir, plugin_name = self.parent._get_plugin_path(home_dir)
         plugin_path = os.path.join(scripts_dir, plugin_name)
         autorun_dir = os.path.join(scripts_dir, 'autorun')
         autorun_path = os.path.join(autorun_dir, plugin_name)
-        plugin_contents = self._load_plugin_contents()
+        plugin_contents = self.parent._load_plugin_contents()
         def mkdir_p(directory):
             try:
                 sftp.mkdir(directory)
@@ -391,19 +361,77 @@ class RemoteHost(multiprocessing.Process, BaseHost):
         client = paramiko.SSHClient()
         client.load_system_host_keys()
         client.set_missing_host_key_policy(paramiko.WarningPolicy())
-        password = self.child_conn.recv()
-        client.connect(self.host, self.port, username=self.user,
-                       key_filename=self.keyfile,
-                       look_for_keys=(self.keyfile is None),
+        password = self.parent.child_conn.recv()
+        client.connect(self.parent.host, self.parent.port,
+                       username=self.parent.user,
+                       key_filename=self.parent.keyfile,
+                       look_for_keys=(self.parent.keyfile is None),
                        password=password)
         sftp = client.open_sftp()
-        self._install_plugin(sftp, self._get_home_dir(client))
+        self._install_plugin(sftp, self.parent._get_home_dir(client))
         sftp.close()
         try:
             reverse_forward_tunnel(21693, '127.0.0.1', 21693, 
                                    client.get_transport())
         except (KeyboardInterrupt, SystemExit):
             pass
+
+
+
+class RemoteHost(multiprocessing.Process, BaseHost):
+
+    daemon = True
+
+    def __init__(self, state, target, keyfile):
+        super(RemoteHost, self).__init__()
+        self.state = state
+        self.icon = state.icon
+        self._parse_target(target)
+        self.keyfile = keyfile
+        self.process = _RemoteHostProcess(self)
+
+    def _parse_target(self, target):
+        user = os.getenv('LOGNAME')
+        port = 22
+        if '@' in target:
+            user, target = target.split('@', 1)
+        if ':' in target:
+            target, port = target.rsplit(':', 1)
+        self.user = user
+        self.host = target
+        self.port = int(port)
+
+    def _restart(self):
+        self.process = _RemoteHostProcess(self)
+        self.start()
+
+    def _on_exit(self, pid, condition, user_data):
+        self.process.join()
+        if self.process.exitcode == 0:
+            self._restart()
+        else:
+            gobject.timeout_add(5000, self._restart)
+
+    def start(self):
+        try:
+            import paramiko
+        except ImportError:
+            msg = 'SSH forwarding support disabled:\n\n- You must install ' \
+                'paramiko for SSH forwarding support. '
+            self.icon.alert(msg)
+            return
+        self.child_conn, parent_conn = multiprocessing.Pipe(False)
+        super(RemoteHost, self).start()
+        gobject.child_watch_add(self.pid, self._on_exit, None)
+        password = None
+        if not self.keyfile:
+            target = '{0}@{1}:{2!s}'.format(self.user, self.host, self.port)
+            password = self.icon.ask_for_password(target)
+        parent_conn.send(password)
+
+    def close(self):
+        if self.process.is_alive():
+            self.process.terminate()
 
 
 def _parse_args():
