@@ -382,8 +382,6 @@ class _RemoteHostProcess(multiprocessing.Process):
 
 class RemoteHost(BaseHost):
 
-    daemon = True
-
     def __init__(self, state, target, keyfile):
         super(RemoteHost, self).__init__()
         self.state = state
@@ -426,6 +424,8 @@ class RemoteHost(BaseHost):
         if not self.keyfile:
             target = '{0}@{1}:{2!s}'.format(self.user, self.host, self.port)
             password = self.icon.ask_for_password(target)
+        else:
+            self.keyfile = os.path.abspath(os.path.expanduser(self.keyfile))
         parent_conn.send(password)
 
     def close(self):
