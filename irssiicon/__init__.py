@@ -171,27 +171,6 @@ class Icon(object):
         box.run()
         box.destroy()
 
-    def ask_for_password(self, target):
-        msg = 'Please enter password for {0}:'.format(target)
-        flags = gtk.DIALOG_MODAL | gtk.DIALOG_DESTROY_WITH_PARENT
-        box = gtk.MessageDialog(buttons=gtk.BUTTONS_OK, flags=flags,
-                                type=gtk.MESSAGE_QUESTION,
-                                message_format=msg)
-        def responseToDialog(entry, dialog, response):
-            dialog.response(response)
-        entry = gtk.Entry()
-        entry.set_visibility(False)
-        entry.connect('activate', responseToDialog, box, gtk.RESPONSE_OK)
-        hbox = gtk.HBox()
-        hbox.pack_start(gtk.Label("Password:"), False, 5, 5)
-        hbox.pack_end(entry)
-        box.vbox.pack_end(hbox, True, True, 0)
-        box.show_all()
-        box.run()
-        password = entry.get_text()
-        box.destroy()
-        return password
-
     def clear_alert_icon(self):
         self._whisper_alert = False
         self.icon.set_from_pixbuf(self._icon_pixbuf)
@@ -280,19 +259,21 @@ class BaseHost(object):
         finally:
             from_fp.close()
 
-    def _get_plugin_path(self, home_dir):
-        scripts_dir = os.path.join(home_dir, '.irssi', 'scripts')
+    def _get_plugin_path(self, home_dir=None):
+        scripts_dir = os.path.join('.irssi', 'scripts')
+        if home_dir:
+            scripts_dir = os.path.join(home_dir, scripts_dir)
+        autorun_dir = os.path.join(scripts_dir, 'autorun')
         plugin_name = 'irssi-icon-notify.pl'
-        return scripts_dir, plugin_name
+        return scripts_dir, autorun_dir, plugin_name
 
 
 class LocalHost(BaseHost):
 
     def start(self):
         home_dir = os.path.expanduser('~')
-        scripts_dir, plugin_name = self._get_plugin_path(home_dir)
+        scripts_dir, autorun_dir, plugin_name = self._get_plugin_path(home_dir)
         plugin_path = os.path.join(scripts_dir, plugin_name)
-        autorun_dir = os.path.join(scripts_dir, 'autorun')
         autorun_path = os.path.join(autorun_dir, plugin_name)
         plugin_contents = self._load_plugin_contents()
         try:
@@ -310,127 +291,58 @@ class LocalHost(BaseHost):
         os.symlink(plugin_path, autorun_path)
 
 
-class _RemoteHostProcess(multiprocessing.Process):
-
-    daemon = True
-
-    def __init__(self, parent, install_plugin=True):
-        super(_RemoteHostProcess, self).__init__()
-        self.parent = parent
-        self.install_plugin = install_plugin
-
-    def _get_home_dir(self, ssh_client):
-        stdin, stdout, stderr = ssh_client.exec_command('echo $HOME')
-        home_dir = ''.join(stdout.readlines()).strip()
-        stdin.close()
-        stdout.close()
-        stderr.close()
-        return home_dir
-
-    def _install_plugin(self, sftp, home_dir):
-        scripts_dir, plugin_name = self.parent._get_plugin_path(home_dir)
-        plugin_path = os.path.join(scripts_dir, plugin_name)
-        autorun_dir = os.path.join(scripts_dir, 'autorun')
-        autorun_path = os.path.join(autorun_dir, plugin_name)
-        plugin_contents = self.parent._load_plugin_contents()
-        def mkdir_p(directory):
-            try:
-                sftp.mkdir(directory)
-            except IOError as exc:
-                if exc.errno == errno.ENOENT:
-                    mkdir_p(os.path.dirname(directory))
-                    mkdir_p(directory)
-        mkdir_p(autorun_dir)
-        fp = sftp.open(plugin_path, 'w')
-        try:
-            fp.write(plugin_contents)
-        finally:
-            fp.close()
-        try:
-            sftp.unlink(autorun_path)
-        except IOError:
-            pass
-        sftp.symlink(plugin_path, autorun_path)
-
-    def _handle_term(self, sig, frame):
-        raise SystemExit()
-
-    def run(self):
-        import paramiko
-        from .rforward import reverse_forward_tunnel
-        signal.signal(signal.SIGTERM, self._handle_term)
-        client = paramiko.SSHClient()
-        client.load_system_host_keys()
-        client.set_missing_host_key_policy(paramiko.WarningPolicy())
-        password = self.parent.child_conn.recv()
-        client.connect(self.parent.host, self.parent.port,
-                       username=self.parent.user,
-                       key_filename=self.parent.keyfile,
-                       look_for_keys=(self.parent.keyfile is None),
-                       password=password)
-        if self.install_plugin:
-            sftp = client.open_sftp()
-            self._install_plugin(sftp, self._get_home_dir(client))
-            sftp.close()
-        try:
-            reverse_forward_tunnel(21693, '127.0.0.1', 21693, 
-                                   client.get_transport())
-        except (KeyboardInterrupt, SystemExit):
-            pass
-
-
-
 class RemoteHost(BaseHost):
 
     def __init__(self, state, target, keyfile):
         super(RemoteHost, self).__init__()
         self.state = state
         self.icon = state.icon
-        self._parse_target(target)
+        self.target = target
         self.keyfile = keyfile
-        self.process = _RemoteHostProcess(self)
+        self.ssh_pid = None
+        self.done = False
 
-    def _parse_target(self, target):
-        user = os.getenv('LOGNAME')
-        port = 22
-        if '@' in target:
-            user, target = target.split('@', 1)
-        if ':' in target:
-            target, port = target.rsplit(':', 1)
-        self.user = user
-        self.host = target
-        self.port = int(port)
+    def _restart_forwarding(self, pid, condition, user_data):
+        if not self.done:
+            gobject.timeout_add(2000, self._start_ssh)
 
-    def _restart(self):
-        self.process = _RemoteHostProcess(self, install_plugin=False)
-        self.start()
+    def _start_forwarding(self):
+        args = ['ssh', self.target, '-o', 'PasswordAuthentication no',
+                '-N', '-R', '21693:localhost:21693']
+        if self.keyfile:
+            args[2:2] = ['-i', self.keyfile]
+        flags = gobject.SPAWN_SEARCH_PATH
+        self.ssh_pid, stdin_fd, stdout_fd, stderr_fd = \
+            gobject.spawn_async(args, flags=flags)
+        gobject.child_watch_add(self.ssh_pid, self._restart_ssh)
 
-    def _on_exit(self, pid, condition, user_data):
-        self.process.join()
-        gobject.timeout_add(2000, self._restart)
+    def _install_plugin(self):
+        plugin_contents = self._load_plugin_contents()
+        scripts_dir, autorun_dir, plugin_name = self._get_plugin_path()
+        plugin_path = os.path.join(scripts_dir, plugin_name)
+        autorun_path = os.path.join(autorun_dir, plugin_name)
+        args = ['ssh', self.target, '-o', 'PasswordAuthentication no',
+                'cat > {0}; ln -sf {1} {2}'.format(plugin_path, plugin_path,
+                                                   autorun_path)]
+        if self.keyfile:
+            args[2:2] = ['-i', self.keyfile]
+        flags = gobject.SPAWN_SEARCH_PATH
+        pid, stdin_fd, stdout_fd, stderr_fd = \
+            gobject.spawn_async(args, flags=flags, standard_input=True)
+        stdin = os.fdopen(stdin_fd, 'w')
+        try:
+            stdin.write(plugin_contents)
+        finally:
+            stdin.close()
 
     def start(self):
-        try:
-            import paramiko
-        except ImportError:
-            msg = 'SSH forwarding support disabled:\n\n- You must install ' \
-                'paramiko for SSH forwarding support. '
-            self.icon.alert(msg)
-            return
-        self.child_conn, parent_conn = multiprocessing.Pipe(False)
-        self.process.start()
-        gobject.child_watch_add(self.process.pid, self._on_exit, None)
-        password = None
-        if not self.keyfile:
-            target = '{0}@{1}:{2!s}'.format(self.user, self.host, self.port)
-            password = self.icon.ask_for_password(target)
-        else:
-            self.keyfile = os.path.abspath(os.path.expanduser(self.keyfile))
-        parent_conn.send(password)
+        self._install_plugin()
+        self._start_forwarding()
 
     def close(self):
-        if self.process.is_alive():
-            self.process.terminate()
+        self.done = True
+        if self.ssh_pid:
+            self.kill(self.ssh_pid, signal.SIGTERM)
 
 
 def _parse_args():
