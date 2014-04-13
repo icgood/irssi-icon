@@ -302,25 +302,26 @@ class RemoteHost(BaseHost):
         self.ssh_pid = None
         self.done = False
 
-    def _restart_forwarding(self, pid, condition, user_data):
+    def _restart_forwarding(self, pid, condition):
+        self.ssh_pid = None
         if not self.done:
-            gobject.timeout_add(2000, self._start_ssh)
+            gobject.timeout_add(5000, self._start_forwarding)
 
     def _start_forwarding(self):
         args = ['ssh', self.target, '-o', 'PasswordAuthentication no',
                 '-N', '-R', '21693:localhost:21693']
         if self.keyfile:
             args[2:2] = ['-i', self.keyfile]
-        flags = gobject.SPAWN_SEARCH_PATH
+        flags = gobject.SPAWN_SEARCH_PATH | gobject.SPAWN_DO_NOT_REAP_CHILD
         self.ssh_pid, stdin_fd, stdout_fd, stderr_fd = \
             gobject.spawn_async(args, flags=flags)
-        gobject.child_watch_add(self.ssh_pid, self._restart_ssh)
+        gobject.child_watch_add(self.ssh_pid, self._restart_forwarding)
 
     def _install_plugin(self):
         plugin_contents = self._load_plugin_contents()
         scripts_dir, autorun_dir, plugin_name = self._get_plugin_path()
-        plugin_path = os.path.join(scripts_dir, plugin_name)
-        autorun_path = os.path.join(autorun_dir, plugin_name)
+        plugin_path = os.path.join('~', scripts_dir, plugin_name)
+        autorun_path = os.path.join('~', autorun_dir, plugin_name)
         args = ['ssh', self.target, '-o', 'PasswordAuthentication no',
                 'cat > {0}; ln -sf {1} {2}'.format(plugin_path, plugin_path,
                                                    autorun_path)]
@@ -342,7 +343,7 @@ class RemoteHost(BaseHost):
     def close(self):
         self.done = True
         if self.ssh_pid:
-            self.kill(self.ssh_pid, signal.SIGTERM)
+            os.kill(self.ssh_pid, signal.SIGTERM)
 
 
 def _parse_args():
