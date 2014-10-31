@@ -36,10 +36,11 @@ import signal
 import multiprocessing
 import SocketServer
 
-from gi.repository import Notify
-from gi.repository import GObject as gobject
 import pygtk
+pygtk.require('2.0')
 import gtk
+import gobject
+import pynotify
 
 
 __version__ = pkg_resources.require('irssi-icon')[0].version
@@ -144,7 +145,7 @@ class Icon(object):
         self._load_icons()
 
     def start(self):
-        Notify.init('irssi-icon')
+        pynotify.init('irssi-icon')
         self._create_icon()
 
     def _load_icons(self):
@@ -191,7 +192,7 @@ class Icon(object):
 
     def notify(self, info, data):
         if self.show_notifications:
-            notification = Notify.Notification.new(info, data, None)
+            notification = pynotify.Notification.new(info, data, None)
             notification.show()
             gobject.timeout_add(10000, self._hide_notification, notification)
 
