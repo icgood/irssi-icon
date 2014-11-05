@@ -192,7 +192,7 @@ class Icon(object):
 
     def notify(self, info, data):
         if self.show_notifications:
-            notification = pynotify.Notification.new(info, data, None)
+            notification = pynotify.Notification(info, data, None)
             notification.show()
             gobject.timeout_add(10000, self._hide_notification, notification)
 
