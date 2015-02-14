@@ -18,26 +18,19 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-"""
+"""  # NOQA
 
 import os
 import os.path
-import shutil
 import sys
-import stat
 import socket
 import subprocess
-import base64
-import zlib
 import argparse
 import pkg_resources
-import errno
 import signal
-import multiprocessing
-import SocketServer
 
 import pygtk
-pygtk.require('2.0')
+pygtk.require('2.0')  # NOQA
 import gtk
 import gobject
 import pynotify
@@ -150,7 +143,7 @@ class Icon(object):
 
     def _load_icons(self):
         def load(name):
-            from pkg_resources import Requirement, resource_filename
+            from pkg_resources import resource_filename
             resource_name = 'icons/{0}.png'.format(name)
             fn = resource_filename(__name__, resource_name)
             return gtk.gdk.pixbuf_new_from_file(fn)
@@ -361,13 +354,13 @@ def _parse_args():
     parser.add_argument('--clear', action='store_true', dest='clear',
                         help='Signal a clear event to a running daemon.')
     parser.add_argument('--ssh', metavar='TARGET', default=None,
-                        help='Forward the listening port to TARGET, which ' \
+                        help='Forward the listening port to TARGET, which '
                         'is of the form [user@]host[:port]')
     parser.add_argument('--ssh-key', metavar='FILE', default=None,
-                        help='If given, FILE is used as an SSH key. If a ' \
-                        'key cannot be found, the password must be entered ' \
+                        help='If given, FILE is used as an SSH key. If a '
+                        'key cannot be found, the password must be entered '
                         'in a dialog box.')
-                         
+
     return parser.parse_args()
 
 
